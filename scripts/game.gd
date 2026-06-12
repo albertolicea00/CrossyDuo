@@ -60,6 +60,8 @@ func _ready() -> void:
 	_build_environment()
 	_build_players()
 	_build_hud()
+	# Camera framing needs the Crosser, so snap it only after players exist.
+	_update_camera(true)
 	if Net.is_authority():
 		_ensure_rows()
 
@@ -88,7 +90,6 @@ func _build_environment() -> void:
 	camera.size = 16.0
 	add_child(camera)
 	camera.current = true
-	_update_camera(true)
 
 
 func _build_players() -> void:
