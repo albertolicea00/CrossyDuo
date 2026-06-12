@@ -8,7 +8,7 @@ const TITLE := "CROSSY DUO"
 var menu: Control
 var status: Label
 var ip_edit: LineEdit
-var game: Node2D
+var game: Node3D  # the world is 3D (voxel Crossy Road aesthetic)
 
 
 func _ready() -> void:

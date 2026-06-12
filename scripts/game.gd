@@ -1,28 +1,33 @@
-## Crossy Duo game world. See AGENTS.md for the full spec.
+## Crossy Duo game world — 3D voxel aesthetic (Crossy Road style).
+## See AGENTS.md for the full spec.
 ##
 ## Authority model:
 ##   - LOCAL / HOST: this node generates rows, moves cars, checks collisions.
 ##   - CLIENT: renders synced state and forwards Traffic Master requests.
 ## Role assignment in network modes: host = Crosser, client = Traffic Master
 ## (the Crosser needs zero input latency, so it always runs on the host).
-extends Node2D
+##
+## World layout: one grid cell = one world unit. Forward is -Z (row r at
+## z = -r); 20 columns centered on x = 0. An angled orthographic camera
+## gives the classic isometric voxel look.
+extends Node3D
 
-const VIEW := Vector2(1280, 720)
-const CELL := 64
+const VIEW := Vector2(1280, 720)        # HUD design size
 const COLS := 20
-const CAR_SIZE := Vector2(96, 40)
-const CAR_HIT_DIST := 60.0      # |car.x - crosser.x| below this = collision
-const ROWS_AHEAD := 14          # generate this many rows above the Crosser
-const ROWS_BEHIND := 8          # free rows this far below the Crosser
-const MIN_LANE_SPEED := 40.0
-const MAX_LANE_SPEED := 280.0
-const SPEED_STEP := 40.0
+const CAR_HIT_DIST := 0.9               # |car.x - crosser.x| below this = hit
+const ROWS_AHEAD := 18                  # generate this many rows ahead
+const ROWS_BEHIND := 8                  # free rows this far behind
+const MIN_LANE_SPEED := 1.0
+const MAX_LANE_SPEED := 7.0
+const SPEED_STEP := 1.0
+const CAR_DESPAWN_X := 13.0
+const CAMERA_OFFSET := Vector3(6.0, 10.0, 7.0)
 
 signal exited
 
 var crosser: Crosser
 var traffic: TrafficMaster
-var camera: Camera2D
+var camera: Camera3D
 
 ## Row registry: row index -> { type, dir, speed, node, spawn_t }.
 ## On clients spawn_t is unused (the host owns all car spawning).
@@ -30,7 +35,7 @@ var rows := {}
 var top_generated := -1
 var consecutive_roads := 0
 
-## Cars: id -> Node2D (visual). Authoritative kinematics: id -> { row, x }.
+## Cars: id -> Node3D (visual). Authoritative kinematics: id -> { row, x }.
 var cars := {}
 var car_state := {}
 var next_car_id := 0
@@ -52,29 +57,38 @@ var over_label: Label
 
 
 func _ready() -> void:
-	_build_world()
+	_build_environment()
 	_build_players()
 	_build_hud()
 	if Net.is_authority():
 		_ensure_rows()
 
 
-# --- Scene construction (all original code-drawn art) ----------------------
+# --- Scene construction (all original low-poly code-built art) --------------
 
-func _build_world() -> void:
-	# Backdrop behind generated rows (visible at the screen edges).
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0.18, 0.35, 0.2)
-	backdrop.size = Vector2(VIEW.x, 40000.0)
-	backdrop.position = Vector2(0, -38000.0)
-	add_child(backdrop)
+func _build_environment() -> void:
+	var env := WorldEnvironment.new()
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color(0.55, 0.8, 0.95)  # flat sky
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color(1, 1, 1)
+	environment.ambient_light_energy = 0.7
+	env.environment = environment
+	add_child(env)
 
-	camera = Camera2D.new()
-	camera.position = Vector2(VIEW.x / 2.0, 360.0)
-	camera.position_smoothing_enabled = true
-	camera.position_smoothing_speed = 6.0
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = Vector3(-55, -35, 0)
+	light.shadow_enabled = true
+	add_child(light)
+
+	# Angled orthographic camera = classic voxel/isometric look.
+	camera = Camera3D.new()
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = 16.0
 	add_child(camera)
-	camera.make_current()
+	camera.current = true
+	_update_camera(true)
 
 
 func _build_players() -> void:
@@ -153,7 +167,24 @@ func _build_hud() -> void:
 	over_box.add_child(quit)
 
 
-# --- Row generation ---------------------------------------------------------
+func _flat_material(color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	return mat
+
+
+# --- Camera -------------------------------------------------------------------
+
+func _update_camera(snap: bool) -> void:
+	# Follow the Crosser along the track; keep the angled offset fixed so the
+	# isometric framing never rotates.
+	var focus := Vector3(0, 0, crosser.position.z - 1.0)
+	var target := focus + CAMERA_OFFSET
+	camera.position = target if snap else camera.position.lerp(target, 0.12)
+	camera.look_at(focus)
+
+
+# --- Row generation -------------------------------------------------------------
 
 func _ensure_rows() -> void:
 	# Generate terrain ahead of the Crosser. Authority only; replicated
@@ -170,7 +201,7 @@ func _ensure_rows() -> void:
 		else:
 			consecutive_roads = 0
 		var dir := 1 if randf() < 0.5 else -1
-		var speed := randf_range(70.0, 190.0)
+		var speed := randf_range(1.5, 4.5)
 		_add_row(r, type, dir, speed)
 		if Net.mode == Net.Mode.HOST:
 			_add_row_remote.rpc(r, type, dir, speed)
@@ -178,25 +209,30 @@ func _ensure_rows() -> void:
 
 
 func _add_row(r: int, type: String, dir: int, speed: float) -> void:
-	var visual := ColorRect.new()
-	visual.size = Vector2(VIEW.x, CELL)
-	visual.position = Vector2(0, Crosser.row_to_y(r) - CELL / 2.0)
+	# One flat box strip per row; grass alternates greens, roads are dark
+	# asphalt with white dashes. All flat colors (voxel look, no textures).
+	var strip := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(COLS + 6.0, 0.4, 1.0)
+	strip.mesh = box
 	if type == "road":
-		visual.color = Color(0.22, 0.22, 0.25)
-		# Dashed center line for the road look.
-		for i in 8:
-			var dash := ColorRect.new()
-			dash.color = Color(0.85, 0.8, 0.3)
-			dash.size = Vector2(40, 4)
-			dash.position = Vector2(20 + i * 160, CELL / 2.0 - 2)
-			visual.add_child(dash)
+		strip.material_override = _flat_material(Color(0.2, 0.2, 0.24))
+		for i in 5:
+			var dash := MeshInstance3D.new()
+			var dash_box := BoxMesh.new()
+			dash_box.size = Vector3(0.7, 0.02, 0.1)
+			dash.mesh = dash_box
+			dash.material_override = _flat_material(Color(0.95, 0.95, 0.9))
+			dash.position = Vector3(-8.0 + i * 4.0, 0.21, 0)
+			strip.add_child(dash)
 	else:
-		# Alternate two greens so grass rows read as separate cells.
-		visual.color = Color(0.4, 0.7, 0.3) if r % 2 == 0 else Color(0.35, 0.64, 0.27)
-	add_child(visual)
+		strip.material_override = _flat_material(
+			Color(0.45, 0.75, 0.35) if r % 2 == 0 else Color(0.4, 0.68, 0.3))
+	strip.position = Vector3(0, -0.2, Crosser.row_to_z(r))
+	add_child(strip)
 	rows[r] = {
 		"type": type, "dir": dir, "speed": speed,
-		"node": visual, "spawn_t": randf_range(1.0, 3.0),
+		"node": strip, "spawn_t": randf_range(1.0, 3.0),
 	}
 
 
@@ -212,7 +248,7 @@ func _free_passed_rows() -> void:
 			rows.erase(r)
 
 
-# --- Crosser input ----------------------------------------------------------
+# --- Crosser input ----------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not playing or Net.mode == Net.Mode.CLIENT:
@@ -254,7 +290,7 @@ func _resolve_swipe(delta: Vector2) -> void:
 	elif absf(delta.x) > absf(delta.y):
 		_hop(Vector2i(1 if delta.x > 0.0 else -1, 0))
 	else:
-		# Screen Y grows downward; row index grows upward.
+		# Screen Y grows downward; forward is up on screen.
 		_hop(Vector2i(0, 1 if delta.y < 0.0 else -1))
 
 
@@ -264,12 +300,16 @@ func _hop(dir: Vector2i) -> void:
 		score_label.text = str(score)
 
 
-# --- Traffic Master ---------------------------------------------------------
+# --- Traffic Master -----------------------------------------------------------------
 
 func _on_lane_tapped(screen_pos: Vector2) -> void:
-	# Convert the tap into a row index using the camera transform.
-	var world: Vector2 = get_viewport().get_canvas_transform().affine_inverse() * screen_pos
-	var r := roundi((688.0 - world.y) / float(CELL))
+	# Project the tap onto the ground plane (y = 0) to find the tapped row.
+	var origin := camera.project_ray_origin(screen_pos)
+	var direction := camera.project_ray_normal(screen_pos)
+	var hit = Plane(Vector3.UP, 0.0).intersects_ray(origin, direction)
+	if hit == null:
+		return
+	var r := roundi(-(hit as Vector3).z)
 	if Net.mode == Net.Mode.CLIENT:
 		_request_spawn_car.rpc_id(1, r)
 	else:
@@ -330,34 +370,36 @@ func _lane_speed_remote(r: int, speed: float) -> void:
 		rows[r]["speed"] = speed
 
 
-# --- Cars -------------------------------------------------------------------
+# --- Cars ------------------------------------------------------------------------------
 
 func _spawn_car(r: int) -> void:
 	# Authority only: cars enter from the edge the lane direction points from.
 	var id := next_car_id
 	next_car_id += 1
 	var dir: int = rows[r]["dir"]
-	var x := -CAR_SIZE.x if dir > 0 else VIEW.x + CAR_SIZE.x
+	var x := -CAR_DESPAWN_X if dir > 0 else CAR_DESPAWN_X
 	car_state[id] = {"row": r, "x": x}
 	_make_car_visual(id, r, x)
 
 
 func _make_car_visual(id: int, r: int, x: float) -> void:
-	var car := Node2D.new()
-	var body := Polygon2D.new()
-	var half := CAR_SIZE / 2.0
-	body.polygon = PackedVector2Array([
-		Vector2(-half.x, -half.y), Vector2(half.x, -half.y),
-		Vector2(half.x, half.y), Vector2(-half.x, half.y)])
-	# Random flat color per car for a playful cartoon look.
-	body.color = Color.from_hsv(randf(), 0.65, 0.85)
+	# Low-poly voxel car: colored body box + lighter cabin box.
+	var car := Node3D.new()
+	var body := MeshInstance3D.new()
+	var body_box := BoxMesh.new()
+	body_box.size = Vector3(1.6, 0.5, 0.8)
+	body.mesh = body_box
+	body.material_override = _flat_material(Color.from_hsv(randf(), 0.65, 0.85))
+	body.position = Vector3(0, 0.45, 0)
 	car.add_child(body)
-	var roof := Polygon2D.new()
-	roof.polygon = PackedVector2Array([
-		Vector2(-24, -14), Vector2(24, -14), Vector2(24, 14), Vector2(-24, 14)])
-	roof.color = Color(0.85, 0.9, 0.95)
-	car.add_child(roof)
-	car.position = Vector2(x, Crosser.row_to_y(r))
+	var cabin := MeshInstance3D.new()
+	var cabin_box := BoxMesh.new()
+	cabin_box.size = Vector3(0.7, 0.35, 0.7)
+	cabin.mesh = cabin_box
+	cabin.material_override = _flat_material(Color(0.85, 0.92, 0.95))
+	cabin.position = Vector3(0, 0.85, 0)
+	car.add_child(cabin)
+	car.position = Vector3(x, 0, Crosser.row_to_z(r))
 	add_child(car)
 	cars[id] = car
 
@@ -369,20 +411,19 @@ func _free_car(id: int) -> void:
 	car_state.erase(id)
 
 
-# --- Simulation -------------------------------------------------------------
+# --- Simulation --------------------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
 	remote_cooldown = maxf(remote_cooldown - delta, 0.0)
 	cooldown_bar.value = (1.0 - traffic.cooldown_left / TrafficMaster.SPAWN_COOLDOWN) * 100.0
-	# Camera follows the Crosser upward but never below the start view.
-	camera.position = Vector2(VIEW.x / 2.0, minf(crosser.position.y - 100.0, 360.0))
+	_update_camera(false)
 	if not playing or Net.mode == Net.Mode.CLIENT:
 		return
 
 	_ensure_rows()
 
-	# Ambient traffic: each visible road lane spawns cars on its own timer,
-	# on top of whatever the Traffic Master adds manually.
+	# Ambient traffic: each road lane spawns cars on its own timer, on top
+	# of whatever the Traffic Master adds manually.
 	for r in rows:
 		if rows[r]["type"] != "road":
 			continue
@@ -401,10 +442,10 @@ func _physics_process(delta: float) -> void:
 			continue
 		state["x"] += float(rows[r]["dir"]) * float(rows[r]["speed"]) * delta
 		cars[id].position.x = state["x"]
-		if state["x"] < -150.0 or state["x"] > VIEW.x + 150.0:
+		if absf(state["x"]) > CAR_DESPAWN_X:
 			dead_cars.append(id)
 			continue
-		# Collision: same row and horizontally overlapping the Crosser.
+		# Collision: same row and laterally overlapping the Crosser.
 		if crosser.alive and r == crosser.row \
 				and absf(state["x"] - crosser.position.x) < CAR_HIT_DIST:
 			crosser.alive = false
@@ -429,7 +470,7 @@ func _send_snapshot() -> void:
 
 
 @rpc("authority", "call_remote", "unreliable")
-func _sync(crosser_pos: Vector2, crosser_row: int, new_score: int,
+func _sync(crosser_pos: Vector3, crosser_row: int, new_score: int,
 		ids: PackedInt32Array, xs: PackedFloat32Array, rs: PackedInt32Array) -> void:
 	crosser.position = crosser_pos
 	crosser.row = crosser_row
@@ -443,14 +484,14 @@ func _sync(crosser_pos: Vector2, crosser_row: int, new_score: int,
 		seen[id] = true
 		if not cars.has(id):
 			_make_car_visual(id, rs[i], xs[i])
-		cars[id].position = Vector2(xs[i], Crosser.row_to_y(rs[i]))
+		cars[id].position = Vector3(xs[i], 0, Crosser.row_to_z(rs[i]))
 	for id in cars.keys():
 		if not seen.has(id):
 			_free_car(id)
 	_free_passed_rows()
 
 
-# --- Game over / restart ----------------------------------------------------
+# --- Game over / restart -------------------------------------------------------------
 
 func _on_crosser_died() -> void:
 	_show_game_over()
@@ -501,10 +542,10 @@ func _restart() -> void:
 	consecutive_roads = 0
 	selected_row = -1
 	crosser.reset()
-	camera.position = Vector2(VIEW.x / 2.0, 360.0)
 	score = 0
 	score_label.text = "0"
 	over_box.visible = false
 	playing = true
 	if Net.is_authority():
 		_ensure_rows()
+	_update_camera(true)
