@@ -5,7 +5,7 @@
 [![Platform: Web | Android | iOS](https://img.shields.io/badge/Platform-Web%20%7C%20Android%20%7C%20iOS-orange)](https://godotengine.org)
 [![Genre: Asymmetric Co-op](https://img.shields.io/badge/Genre-Asymmetric%20Co--op-purple)](#asymmetric-co-op-roles)
 
-An asymmetric 2D co-op game with grid-based movement. One player is the **Crosser**, hopping across lanes to reach safety, while the other is the **Traffic Master**, controlling lane speeds and vehicle spawns to assist or challenge the Crosser.
+An asymmetric co-op game with grid-based movement in a **3D voxel world** (Crossy Road style isometric camera). One player is the **Crosser**, hopping across lanes to reach safety, while the other is the **Traffic Master**, controlling lane speeds and vehicle spawns to assist or challenge the Crosser.
 
 ---
 
@@ -37,7 +37,8 @@ You can play Crossy Duo in three different ways:
 *   **Assets:** CC0 (Public Domain) or original custom assets
 
 ### Feature Specs:
-- **Grid-snapped Movement:** Snaps the Crosser to discrete cells.
+- **Grid-snapped Movement:** Snaps the Crosser to discrete cells (1 cell = 1 world unit).
+- **3D Voxel Aesthetic:** `Node3D` world, angled orthographic camera, flat-colored `BoxMesh` art (no textures).
 - **Spawning Systems:** Handles vehicle waves and speed modification variables.
 
 ---
