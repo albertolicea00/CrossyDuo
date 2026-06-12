@@ -1,6 +1,6 @@
-# AGENTS.md — Crossy Duo (2D)
+# AGENTS.md — Crossy Duo (3D voxel)
 
-2D asymmetric co-op game, Crossy Road style. Grid-based movement.
+Asymmetric co-op game, Crossy Road style. Grid-based movement rendered in a **3D voxel world** (angled orthographic camera, flat-colored low-poly boxes).
 
 > All code, comments, and docs in English, with good meaningful comments.
 
@@ -17,14 +17,14 @@
 
 ## Technical requirements
 - Godot 4.x (GDScript)
-- Web + Android export
-- Grid-based movement (cell snapping)
-- Voxel/cartoon art
+- Web (HTML5) + Android + iOS export
+- Grid-based movement (cell snapping: 1 cell = 1 world unit, forward = -Z)
+- 3D voxel world: `Node3D` scene, orthographic isometric camera, `BoxMesh` flat-colored visuals (no textures)
 - Modular code (logic / networking / UI separated)
-- Independent project: do NOT share anything with the other games in the monorepo
+- Independent project: standalone repo, nothing shared with the other games
 
 ## Art style
-Voxel, low poly cute, cartoon. Original art or CC0.
+3D voxel, low poly cute, cartoon. Flat colors only, mobile-optimized. Original art or CC0.
 
 ---
 
@@ -47,7 +47,7 @@ Voxel, low poly cute, cartoon. Original art or CC0.
 - Leonardo.ai, Flux/Midjourney, Stable Diffusion (local)
 
 ### Base prompt
-> "2D game assets, flat style, clean shapes, no gradients, CC0 style, simple silhouettes, bright colors, for a mobile game, voxel cute style"
+> "low poly 3D voxel models, mobile optimized, no textures, only flat colors, CC0 style, clean geometry, cute cartoon style, for a casual game"
 
 ---
 

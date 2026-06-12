@@ -4,7 +4,7 @@ Living checklist. Items are checked (`[x]`) when done — never deleted.
 
 ## Project setup
 
-- [x] Godot 4.x project (`project.godot`, GL Compatibility renderer for Web + Android + iOS)
+- [x] Godot 4.x project (`project.godot`, GL Compatibility renderer for Web + Android + iOS + iOS)
 - [x] Entry scene `scenes/main.tscn` + code-built UI
 - [x] `Net` autoload (`scripts/net.gd`) — LOCAL / HOST / CLIENT, port 7802
 - [x] Repo files: README, LICENSE, EULA, PRIVACY_POLICY, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, AGENTS.md, TODO.md, .github templates, .gitignore
@@ -16,6 +16,7 @@ Living checklist. Items are checked (`[x]`) when done — never deleted.
 - [x] Cars: per-lane direction + speed, ambient auto-spawn timers
 - [x] Traffic Master: tap lane to spawn car (1.5s cooldown), Lane +/- speed buttons
 - [x] Authoritative collision: car vs crosser (same row + x overlap)
+- [x] 3D voxel aesthetic: Node3D world, orthographic isometric camera, voxel chick + cars, ground-plane ray picking for lane taps
 - [x] Camera follows crosser upward; score = furthest row
 - [x] Game over panel + restart + back to menu
 
