@@ -29,6 +29,7 @@ Living checklist. Items are checked (`[x]`) when done — never deleted.
 
 ## Polish / pending
 
+- [x] Automated smoke playtest (`tests/playtest.tscn`): play → die → game over → restart loop verified headless
 - [ ] Manual playtest: balance lane speeds, spawn rates, road density
 - [ ] LAN playtest on two devices
 - [ ] Idle pressure mechanic (eagle/timer punishing camping)
